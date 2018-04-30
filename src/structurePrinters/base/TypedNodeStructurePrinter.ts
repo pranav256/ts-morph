@@ -1,5 +1,5 @@
 ﻿import { CodeBlockWriter } from "../../codeBlockWriter";
-import { TypedNodeStructure, QuestionTokenableNodeStructure } from "../../structures";
+import { TypedNodeStructure } from "../../structures";
 import { StructurePrinterFactory } from "../../factories";
 import { StringUtils } from "../../utils";
 import { FactoryStructurePrinter } from "../FactoryStructurePrinter";
