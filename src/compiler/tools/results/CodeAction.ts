@@ -13,7 +13,7 @@ export class CodeAction<TCompilerObject extends ts.CodeAction = ts.CodeAction> {
         this._compilerObject = compilerObject;
     }
 
-    /** Gets the compiler text change. */
+    /** Gets the compiler object. */
     get compilerObject() {
         return this._compilerObject;
     }
