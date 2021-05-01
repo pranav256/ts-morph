@@ -290,7 +290,7 @@ var ts;
     // The following is baselined as a literal template type without intervention
     /** The version of the TypeScript compiler release */
     // eslint-disable-next-line @typescript-eslint/no-inferrable-types
-    ts.version = "4.2.2";
+    ts.version = "4.2.4";
     /* @internal */
     var Comparison;
     (function (Comparison) {
@@ -7199,13 +7199,13 @@ var ts;
             }
             var activeSession;
             var profilePath = "./profile.cpuprofile";
-            var realpathSync = (_a = _fs.realpathSync.native) !== null && _a !== void 0 ? _a : _fs.realpathSync;
             var Buffer = require("buffer").Buffer;
             var nodeVersion = getNodeMajorVersion();
             var isNode4OrLater = nodeVersion >= 4;
             var isLinuxOrMacOs = process.platform === "linux" || process.platform === "darwin";
             var platform = _os.platform();
             var useCaseSensitiveFileNames = isFileSystemCaseSensitive();
+            var realpathSync = useCaseSensitiveFileNames ? ((_a = _fs.realpathSync.native) !== null && _a !== void 0 ? _a : _fs.realpathSync) : _fs.realpathSync;
             var fsSupportsRecursiveFsWatch = isNode4OrLater && (process.platform === "win32" || process.platform === "darwin");
             var getCurrentDirectory = ts.memoize(function () { return process.cwd(); });
             var _c = createSystemWatchFunctions({
@@ -47177,7 +47177,9 @@ var ts;
             var result = new Type(checker, flags);
             typeCount++;
             result.id = typeCount;
-            typeCatalog.push(result);
+            if (ts.tracing) {
+                typeCatalog.push(result);
+            }
             return result;
         }
         function createOriginType(flags) {
@@ -47238,13 +47240,17 @@ var ts;
             return result || ts.emptyArray;
         }
         function setStructuredTypeMembers(type, members, callSignatures, constructSignatures, stringIndexInfo, numberIndexInfo) {
-            type.members = members;
-            type.properties = members === emptySymbols ? ts.emptyArray : getNamedMembers(members);
-            type.callSignatures = callSignatures;
-            type.constructSignatures = constructSignatures;
-            type.stringIndexInfo = stringIndexInfo;
-            type.numberIndexInfo = numberIndexInfo;
-            return type;
+            var resolved = type;
+            resolved.members = members;
+            resolved.properties = ts.emptyArray;
+            resolved.callSignatures = callSignatures;
+            resolved.constructSignatures = constructSignatures;
+            resolved.stringIndexInfo = stringIndexInfo;
+            resolved.numberIndexInfo = numberIndexInfo;
+            // This can loop back to getPropertyOfType() which would crash if `callSignatures` & `constructSignatures` are not initialized.
+            if (members !== emptySymbols)
+                resolved.properties = getNamedMembers(members);
+            return resolved;
         }
         function createAnonymousType(symbol, members, callSignatures, constructSignatures, stringIndexInfo, numberIndexInfo) {
             return setStructuredTypeMembers(createObjectType(16 /* Anonymous */, symbol), members, callSignatures, constructSignatures, stringIndexInfo, numberIndexInfo);
@@ -55913,7 +55919,7 @@ var ts;
                 if (t.flags & 1048576 /* Union */) {
                     var origin = t.origin;
                     if (t.aliasSymbol || origin && !(origin.flags & 1048576 /* Union */)) {
-                        namedUnions.push(t);
+                        ts.pushIfUnique(namedUnions, t);
                     }
                     else if (origin && origin.flags & 1048576 /* Union */) {
                         addNamedUnions(namedUnions, origin.types);
@@ -77548,6 +77554,7 @@ var ts;
             return true;
         }
         function checkAliasSymbol(node) {
+            var _a;
             var symbol = getSymbolOfNode(node);
             var target = resolveAlias(symbol);
             if (target !== unknownSymbol) {
@@ -77575,7 +77582,7 @@ var ts;
                     && !(node.flags & 8388608 /* Ambient */)) {
                     error(node, ts.Diagnostics.Re_exporting_a_type_when_the_isolatedModules_flag_is_provided_requires_using_export_type);
                 }
-                if (ts.isImportSpecifier(node) && ts.every(target.declarations, function (d) { return !!(ts.getCombinedNodeFlags(d) & 134217728 /* Deprecated */); })) {
+                if (ts.isImportSpecifier(node) && ((_a = target.declarations) === null || _a === void 0 ? void 0 : _a.every(function (d) { return !!(ts.getCombinedNodeFlags(d) & 134217728 /* Deprecated */); }))) {
                     addDeprecatedSuggestion(node.name, target.declarations, symbol.escapedName);
                 }
             }
@@ -111680,10 +111687,11 @@ var ts;
             var redirects = host.redirectTargetsMap.get(importedPath) || ts.emptyArray;
             var importedFileNames = __spreadArray(__spreadArray(__spreadArray([], (referenceRedirect ? [referenceRedirect] : ts.emptyArray)), [importedFileName]), redirects);
             var targets = importedFileNames.map(function (f) { return ts.getNormalizedAbsolutePath(f, cwd); });
+            var shouldFilterIgnoredPaths = !ts.every(targets, ts.containsIgnoredPath);
             if (!preferSymlinks) {
                 // Symlinks inside ignored paths are already filtered out of the symlink cache,
                 // so we only need to remove them from the realpath filenames.
-                var result_15 = ts.forEach(targets, function (p) { return !ts.containsIgnoredPath(p) && cb(p, referenceRedirect === p); });
+                var result_15 = ts.forEach(targets, function (p) { return !(shouldFilterIgnoredPaths && ts.containsIgnoredPath(p)) && cb(p, referenceRedirect === p); });
                 if (result_15)
                     return result_15;
             }
@@ -111709,13 +111717,14 @@ var ts;
                         var symlinkDirectory = symlinkDirectories_1[_i];
                         var option = ts.resolvePath(symlinkDirectory, relative);
                         var result_16 = cb(option, target === referenceRedirect);
+                        shouldFilterIgnoredPaths = true; // We found a non-ignored path in symlinks, so we can reject ignored-path realpaths
                         if (result_16)
                             return result_16;
                     }
                 });
             });
             return result || (preferSymlinks
-                ? ts.forEach(targets, function (p) { return ts.containsIgnoredPath(p) ? undefined : cb(p, p === referenceRedirect); })
+                ? ts.forEach(targets, function (p) { return shouldFilterIgnoredPaths && ts.containsIgnoredPath(p) ? undefined : cb(p, p === referenceRedirect); })
                 : undefined);
         }
         moduleSpecifiers.forEachFileNameOfModule = forEachFileNameOfModule;
@@ -140165,7 +140174,7 @@ var ts;
         }
         function addFunctionDeclaration(changes, context, info) {
             var importAdder = codefix.createImportAdder(context.sourceFile, context.program, context.preferences, context.host);
-            var functionDeclaration = codefix.createSignatureDeclarationFromCallExpression(251 /* FunctionDeclaration */, context, importAdder, info.call, info.token, info.modifierFlags, info.parentDeclaration);
+            var functionDeclaration = codefix.createSignatureDeclarationFromCallExpression(251 /* FunctionDeclaration */, context, importAdder, info.call, ts.idText(info.token), info.modifierFlags, info.parentDeclaration);
             changes.insertNodeAtEndOfScope(info.sourceFile, info.parentDeclaration, functionDeclaration);
         }
     })(codefix = ts.codefix || (ts.codefix = {}));
@@ -148981,7 +148990,7 @@ var ts;
         };
         SignatureObject.prototype.getJsDocTags = function () {
             if (this.jsDocTags === undefined) {
-                this.jsDocTags = this.declaration ? getJsDocTags([this.declaration], this.checker) : [];
+                this.jsDocTags = this.declaration ? getJsDocTagsOfSignature(this.declaration, this.checker) : [];
             }
             return this.jsDocTags;
         };
@@ -148995,15 +149004,13 @@ var ts;
     function hasJSDocInheritDocTag(node) {
         return ts.getJSDocTags(node).some(function (tag) { return tag.tagName.text === "inheritDoc"; });
     }
-    function getJsDocTags(declarations, checker) {
-        var tags = ts.JsDoc.getJsDocTagsFromDeclarations(declarations);
-        if (tags.length === 0 || declarations.some(hasJSDocInheritDocTag)) {
-            ts.forEachUnique(declarations, function (declaration) {
-                var inheritedTags = findBaseOfDeclaration(checker, declaration, function (symbol) { return symbol.getJsDocTags(); });
-                if (inheritedTags) {
-                    tags = __spreadArray(__spreadArray([], inheritedTags), tags);
-                }
-            });
+    function getJsDocTagsOfSignature(declaration, checker) {
+        var tags = ts.JsDoc.getJsDocTagsFromDeclarations([declaration]);
+        if (tags.length === 0 || hasJSDocInheritDocTag(declaration)) {
+            var inheritedTags = findBaseOfDeclaration(checker, declaration, function (symbol) { var _a; return ((_a = symbol.declarations) === null || _a === void 0 ? void 0 : _a.length) === 1 ? symbol.getJsDocTags() : undefined; });
+            if (inheritedTags) {
+                tags = __spreadArray(__spreadArray([], inheritedTags), tags);
+            }
         }
         return tags;
     }
