@@ -294,7 +294,7 @@ var ts;
     // The following is baselined as a literal template type without intervention
     /** The version of the TypeScript compiler release */
     // eslint-disable-next-line @typescript-eslint/no-inferrable-types
-    ts.version = "4.4.2";
+    ts.version = "4.4.4";
     /* @internal */
     var Comparison;
     (function (Comparison) {
@@ -118221,6 +118221,10 @@ var ts;
                 });
                 parsedConfigs = undefined;
             }
+            if (packageJsonMap) {
+                ts.clearMap(packageJsonMap, ts.closeFileWatcher);
+                packageJsonMap = undefined;
+            }
         }
         function getCurrentBuilderProgram() {
             return builderProgram;
@@ -119313,11 +119317,11 @@ var ts;
             (_b = state.typeReferenceDirectiveResolutionCache) === null || _b === void 0 ? void 0 : _b.update(config.options);
             // Create program
             program = host.createProgram(config.fileNames, config.options, compilerHost, getOldProgram(state, projectPath, config), ts.getConfigFileParsingDiagnostics(config), config.projectReferences);
-            state.lastCachedPackageJsonLookups.set(projectPath, state.moduleResolutionCache && ts.map(state.moduleResolutionCache.getPackageJsonInfoCache().entries(), function (_a) {
-                var path = _a[0], data = _a[1];
-                return [state.host.realpath ? toPath(state, state.host.realpath(path)) : path, data];
-            }));
             if (state.watch) {
+                state.lastCachedPackageJsonLookups.set(projectPath, state.moduleResolutionCache && ts.map(state.moduleResolutionCache.getPackageJsonInfoCache().entries(), function (_a) {
+                    var path = _a[0], data = _a[1];
+                    return [state.host.realpath && data ? toPath(state, state.host.realpath(path)) : path, data];
+                }));
                 state.builderPrograms.set(projectPath, program);
             }
             step++;
@@ -127284,13 +127288,16 @@ var ts;
                         case 204 /* PropertyAccessExpression */:
                             propertyAccessToConvert = parent;
                             node = propertyAccessToConvert.expression;
-                            if ((ts.isCallExpression(node) || ts.isFunctionLike(node)) &&
-                                node.end === contextToken.pos &&
-                                node.getChildCount(sourceFile) &&
-                                ts.last(node.getChildren(sourceFile)).kind !== 21 /* CloseParenToken */) {
+                            var leftmostAccessExpression = ts.getLeftmostAccessExpression(propertyAccessToConvert);
+                            if (ts.nodeIsMissing(leftmostAccessExpression) ||
+                                ((ts.isCallExpression(node) || ts.isFunctionLike(node)) &&
+                                    node.end === contextToken.pos &&
+                                    node.getChildCount(sourceFile) &&
+                                    ts.last(node.getChildren(sourceFile)).kind !== 21 /* CloseParenToken */)) {
                                 // This is likely dot from incorrectly parsed expression and user is starting to write spread
                                 // eg: Math.min(./**/)
                                 // const x = function (./**/) {}
+                                // ({./**/})
                                 return undefined;
                             }
                             break;
