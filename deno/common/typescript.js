@@ -294,7 +294,7 @@ var ts;
     // The following is baselined as a literal template type without intervention
     /** The version of the TypeScript compiler release */
     // eslint-disable-next-line @typescript-eslint/no-inferrable-types
-    ts.version = "4.5.2";
+    ts.version = "4.5.5";
     /* @internal */
     var Comparison;
     (function (Comparison) {
@@ -16033,7 +16033,7 @@ var ts;
     }
     ts.getExternalModuleImportEqualsDeclarationExpression = getExternalModuleImportEqualsDeclarationExpression;
     function getExternalModuleRequireArgument(node) {
-        return isRequireVariableDeclaration(node) && getLeftmostAccessExpression(node.initializer).arguments[0];
+        return isVariableDeclarationInitializedToBareOrAccessedRequire(node) && getLeftmostAccessExpression(node.initializer).arguments[0];
     }
     ts.getExternalModuleRequireArgument = getExternalModuleRequireArgument;
     function isInternalModuleImportEqualsDeclaration(node) {
@@ -16091,17 +16091,29 @@ var ts;
      * Returns true if the node is a VariableDeclaration initialized to a require call (see `isRequireCall`).
      * This function does not test if the node is in a JavaScript file or not.
      */
-    function isRequireVariableDeclaration(node) {
+    function isVariableDeclarationInitializedToRequire(node) {
+        return isVariableDeclarationInitializedWithRequireHelper(node, /*allowAccessedRequire*/ false);
+    }
+    ts.isVariableDeclarationInitializedToRequire = isVariableDeclarationInitializedToRequire;
+    /**
+     * Like {@link isVariableDeclarationInitializedToRequire} but allows things like `require("...").foo.bar` or `require("...")["baz"]`.
+     */
+    function isVariableDeclarationInitializedToBareOrAccessedRequire(node) {
+        return isVariableDeclarationInitializedWithRequireHelper(node, /*allowAccessedRequire*/ true);
+    }
+    ts.isVariableDeclarationInitializedToBareOrAccessedRequire = isVariableDeclarationInitializedToBareOrAccessedRequire;
+    function isVariableDeclarationInitializedWithRequireHelper(node, allowAccessedRequire) {
         if (node.kind === 202 /* BindingElement */) {
             node = node.parent.parent;
         }
-        return ts.isVariableDeclaration(node) && !!node.initializer && isRequireCall(getLeftmostAccessExpression(node.initializer), /*requireStringLiteralLikeArgument*/ true);
+        return ts.isVariableDeclaration(node) &&
+            !!node.initializer &&
+            isRequireCall(allowAccessedRequire ? getLeftmostAccessExpression(node.initializer) : node.initializer, /*requireStringLiteralLikeArgument*/ true);
     }
-    ts.isRequireVariableDeclaration = isRequireVariableDeclaration;
     function isRequireVariableStatement(node) {
         return ts.isVariableStatement(node)
             && node.declarationList.declarations.length > 0
-            && ts.every(node.declarationList.declarations, function (decl) { return isRequireVariableDeclaration(decl); });
+            && ts.every(node.declarationList.declarations, function (decl) { return isVariableDeclarationInitializedToRequire(decl); });
     }
     ts.isRequireVariableStatement = isRequireVariableStatement;
     function isSingleOrDoubleQuote(charCode) {
@@ -41653,7 +41665,10 @@ var ts;
             }
         }
         var failedLookupLocations = [];
-        var moduleResolutionState = { compilerOptions: options, host: host, traceEnabled: traceEnabled, failedLookupLocations: failedLookupLocations, packageJsonInfoCache: cache, features: NodeResolutionFeatures.AllFeatures, conditions: ["node", "require", "types"] };
+        var features = ts.getEmitModuleResolutionKind(options) === ts.ModuleResolutionKind.Node12 ? NodeResolutionFeatures.Node12Default :
+            ts.getEmitModuleResolutionKind(options) === ts.ModuleResolutionKind.NodeNext ? NodeResolutionFeatures.NodeNextDefault :
+                NodeResolutionFeatures.None;
+        var moduleResolutionState = { compilerOptions: options, host: host, traceEnabled: traceEnabled, failedLookupLocations: failedLookupLocations, packageJsonInfoCache: cache, features: features, conditions: ["node", "require", "types"] };
         var resolved = primaryLookup();
         var primary = true;
         if (!resolved) {
@@ -42328,13 +42343,15 @@ var ts;
         // not currently backported to node 12 - https://github.com/nodejs/Release/issues/690
         NodeResolutionFeatures[NodeResolutionFeatures["ExportsPatternTrailers"] = 16] = "ExportsPatternTrailers";
         NodeResolutionFeatures[NodeResolutionFeatures["AllFeatures"] = 30] = "AllFeatures";
+        NodeResolutionFeatures[NodeResolutionFeatures["Node12Default"] = 14] = "Node12Default";
+        NodeResolutionFeatures[NodeResolutionFeatures["NodeNextDefault"] = 30] = "NodeNextDefault";
         NodeResolutionFeatures[NodeResolutionFeatures["EsmMode"] = 32] = "EsmMode";
     })(NodeResolutionFeatures || (NodeResolutionFeatures = {}));
     function node12ModuleNameResolver(moduleName, containingFile, compilerOptions, host, cache, redirectedReference, resolutionMode) {
-        return nodeNextModuleNameResolverWorker(NodeResolutionFeatures.Imports | NodeResolutionFeatures.SelfName | NodeResolutionFeatures.Exports, moduleName, containingFile, compilerOptions, host, cache, redirectedReference, resolutionMode);
+        return nodeNextModuleNameResolverWorker(NodeResolutionFeatures.Node12Default, moduleName, containingFile, compilerOptions, host, cache, redirectedReference, resolutionMode);
     }
     function nodeNextModuleNameResolver(moduleName, containingFile, compilerOptions, host, cache, redirectedReference, resolutionMode) {
-        return nodeNextModuleNameResolverWorker(NodeResolutionFeatures.AllFeatures, moduleName, containingFile, compilerOptions, host, cache, redirectedReference, resolutionMode);
+        return nodeNextModuleNameResolverWorker(NodeResolutionFeatures.NodeNextDefault, moduleName, containingFile, compilerOptions, host, cache, redirectedReference, resolutionMode);
     }
     function nodeNextModuleNameResolverWorker(features, moduleName, containingFile, compilerOptions, host, cache, redirectedReference, resolutionMode) {
         var containingDirectory = ts.getDirectoryPath(containingFile);
@@ -46253,7 +46270,7 @@ var ts;
                 checkStrictModeEvalOrArguments(node, node.name);
             }
             if (!ts.isBindingPattern(node.name)) {
-                if (ts.isInJSFile(node) && ts.isRequireVariableDeclaration(node) && !ts.getJSDocTypeTag(node)) {
+                if (ts.isInJSFile(node) && ts.isVariableDeclarationInitializedToBareOrAccessedRequire(node) && !ts.getJSDocTypeTag(node)) {
                     declareSymbolAndAddToSymbolTable(node, 2097152 /* Alias */, 2097152 /* AliasExcludes */);
                 }
                 else if (ts.isBlockOrCatchScoped(node)) {
@@ -48297,11 +48314,12 @@ var ts;
          *
          * @param isUse If true, this will count towards --noUnusedLocals / --noUnusedParameters.
          */
-        function resolveName(location, name, meaning, nameNotFoundMessage, nameArg, isUse, excludeGlobals) {
+        function resolveName(location, name, meaning, nameNotFoundMessage, nameArg, isUse, excludeGlobals, getSpellingSuggstions) {
             if (excludeGlobals === void 0) { excludeGlobals = false; }
-            return resolveNameHelper(location, name, meaning, nameNotFoundMessage, nameArg, isUse, excludeGlobals, getSymbol);
+            if (getSpellingSuggstions === void 0) { getSpellingSuggstions = true; }
+            return resolveNameHelper(location, name, meaning, nameNotFoundMessage, nameArg, isUse, excludeGlobals, getSpellingSuggstions, getSymbol);
         }
-        function resolveNameHelper(location, name, meaning, nameNotFoundMessage, nameArg, isUse, excludeGlobals, lookup) {
+        function resolveNameHelper(location, name, meaning, nameNotFoundMessage, nameArg, isUse, excludeGlobals, getSpellingSuggestions, lookup) {
             var _a, _b, _c;
             var originalLocation = location; // needed for did-you-mean error reporting, which gathers candidates starting from the original location
             var result;
@@ -48618,7 +48636,7 @@ var ts;
                 }
             }
             if (!result) {
-                if (nameNotFoundMessage) {
+                if (nameNotFoundMessage && produceDiagnostics) {
                     if (!errorLocation ||
                         !checkAndReportErrorForMissingPrefix(errorLocation, name, nameArg) && // TODO: GH#18217
                             !checkAndReportErrorForExtendingInterface(errorLocation) &&
@@ -48628,7 +48646,7 @@ var ts;
                             !checkAndReportErrorForUsingNamespaceModuleAsValue(errorLocation, name, meaning) &&
                             !checkAndReportErrorForUsingValueAsType(errorLocation, name, meaning)) {
                         var suggestion = void 0;
-                        if (suggestionCount < maximumSuggestionCount) {
+                        if (getSpellingSuggestions && suggestionCount < maximumSuggestionCount) {
                             suggestion = getSuggestedSymbolForNonexistentSymbol(originalLocation, name, meaning);
                             var isGlobalScopeAugmentationDeclaration = (suggestion === null || suggestion === void 0 ? void 0 : suggestion.valueDeclaration) && ts.isAmbientModule(suggestion.valueDeclaration) && ts.isGlobalScopeAugmentation(suggestion.valueDeclaration);
                             if (isGlobalScopeAugmentationDeclaration) {
@@ -48664,7 +48682,7 @@ var ts;
                 return undefined;
             }
             // Perform extra checks only if error reporting was requested
-            if (nameNotFoundMessage) {
+            if (nameNotFoundMessage && produceDiagnostics) {
                 if (propertyWithInvalidInitializer && !(ts.getEmitScriptTarget(compilerOptions) === 99 /* ESNext */ && useDefineForClassFields)) {
                     // We have a match, but the reference occurred within a property initializer and the identifier also binds
                     // to a local variable in the constructor where the code will be emitted. Note that this is actually allowed
@@ -49031,7 +49049,7 @@ var ts;
                     && isAliasableOrJsExpression(node.parent.right)
                 || node.kind === 295 /* ShorthandPropertyAssignment */
                 || node.kind === 294 /* PropertyAssignment */ && isAliasableOrJsExpression(node.initializer)
-                || ts.isRequireVariableDeclaration(node);
+                || ts.isVariableDeclarationInitializedToBareOrAccessedRequire(node);
         }
         function isAliasableOrJsExpression(e) {
             return ts.isAliasableExpression(e) || ts.isFunctionExpression(e) && isJSConstructor(e);
@@ -50002,7 +50020,7 @@ var ts;
                         if (!sigs || !sigs.length) {
                             sigs = getSignaturesOfStructuredType(type, 1 /* Construct */);
                         }
-                        if ((sigs && sigs.length) || getPropertyOfType(type, "default" /* Default */)) {
+                        if ((sigs && sigs.length) || getPropertyOfType(type, "default" /* Default */, /*skipObjectFunctionPropertyAugment*/ true)) {
                             var moduleType = getTypeWithSyntheticDefaultImportType(type, symbol, moduleSymbol, reference);
                             return cloneTypeAsModuleType(symbol, moduleType, referenceParent);
                         }
@@ -59069,7 +59087,7 @@ var ts;
         }
         function getGlobalSymbol(name, meaning, diagnostic) {
             // Don't track references for global symbols anyway, so value if `isReference` is arbitrary
-            return resolveName(undefined, name, meaning, diagnostic, name, /*isUse*/ false);
+            return resolveName(undefined, name, meaning, diagnostic, name, /*isUse*/ false, /*excludeGlobals*/ false, /*getSpellingSuggestions*/ false);
         }
         function getGlobalType(name, arity, reportErrors) {
             var symbol = getGlobalTypeSymbol(name, reportErrors);
@@ -62939,7 +62957,7 @@ var ts;
                     return true;
             }
             if (source.flags & 524288 /* Object */ && target.flags & 524288 /* Object */) {
-                var related = relation.get(getRelationKey(source, target, 0 /* None */, relation));
+                var related = relation.get(getRelationKey(source, target, 0 /* None */, relation, /*ignoreConstraints*/ false));
                 if (related !== undefined) {
                     return !!(related & 1 /* Succeeded */);
                 }
@@ -63788,7 +63806,8 @@ var ts;
                 if (overflow) {
                     return 0 /* False */;
                 }
-                var id = getRelationKey(source, target, intersectionState | (inPropertyCheck ? 16 /* InPropertyCheck */ : 0), relation);
+                var keyIntersectionState = intersectionState | (inPropertyCheck ? 16 /* InPropertyCheck */ : 0);
+                var id = getRelationKey(source, target, keyIntersectionState, relation, /*ingnoreConstraints*/ false);
                 var entry = relation.get(id);
                 if (entry !== undefined) {
                     if (reportErrors && entry & 2 /* Failed */ && !(entry & 4 /* Reported */)) {
@@ -63815,16 +63834,13 @@ var ts;
                     targetStack = [];
                 }
                 else {
-                    // generate a key where all type parameter id positions are replaced with unconstrained type parameter ids
-                    // this isn't perfect - nested type references passed as type arguments will muck up the indexes and thus
-                    // prevent finding matches- but it should hit up the common cases
-                    var broadestEquivalentId = id.split(",").map(function (i) { return i.replace(/-\d+/g, function (_match, offset) {
-                        var index = ts.length(id.slice(0, offset).match(/[-=]/g) || undefined);
-                        return "=".concat(index);
-                    }); }).join(",");
+                    // A key that starts with "*" is an indication that we have type references that reference constrained
+                    // type parameters. For such keys we also check against the key we would have gotten if all type parameters
+                    // were unconstrained.
+                    var broadestEquivalentId = id.startsWith("*") ? getRelationKey(source, target, keyIntersectionState, relation, /*ignoreConstraints*/ true) : undefined;
                     for (var i = 0; i < maybeCount; i++) {
                         // If source and target are already being compared, consider them related with assumptions
-                        if (id === maybeKeys[i] || broadestEquivalentId === maybeKeys[i]) {
+                        if (id === maybeKeys[i] || broadestEquivalentId && broadestEquivalentId === maybeKeys[i]) {
                             return 3 /* Maybe */;
                         }
                     }
@@ -65331,48 +65347,56 @@ var ts;
         function isTypeReferenceWithGenericArguments(type) {
             return isNonDeferredTypeReference(type) && ts.some(getTypeArguments(type), function (t) { return !!(t.flags & 262144 /* TypeParameter */) || isTypeReferenceWithGenericArguments(t); });
         }
-        /**
-         * getTypeReferenceId(A<T, number, U>) returns "111=0-12=1"
-         *   where A.id=111 and number.id=12
-         */
-        function getTypeReferenceId(type, typeParameters, depth) {
-            if (depth === void 0) { depth = 0; }
-            var result = "" + type.target.id;
-            for (var _i = 0, _a = getTypeArguments(type); _i < _a.length; _i++) {
-                var t = _a[_i];
-                if (isUnconstrainedTypeParameter(t)) {
-                    var index = typeParameters.indexOf(t);
-                    if (index < 0) {
-                        index = typeParameters.length;
-                        typeParameters.push(t);
+        function getGenericTypeReferenceRelationKey(source, target, postFix, ignoreConstraints) {
+            var typeParameters = [];
+            var constraintMarker = "";
+            var sourceId = getTypeReferenceId(source, 0);
+            var targetId = getTypeReferenceId(target, 0);
+            return "".concat(constraintMarker).concat(sourceId, ",").concat(targetId).concat(postFix);
+            // getTypeReferenceId(A<T, number, U>) returns "111=0-12=1"
+            // where A.id=111 and number.id=12
+            function getTypeReferenceId(type, depth) {
+                if (depth === void 0) { depth = 0; }
+                var result = "" + type.target.id;
+                for (var _i = 0, _a = getTypeArguments(type); _i < _a.length; _i++) {
+                    var t = _a[_i];
+                    if (t.flags & 262144 /* TypeParameter */) {
+                        if (ignoreConstraints || isUnconstrainedTypeParameter(t)) {
+                            var index = typeParameters.indexOf(t);
+                            if (index < 0) {
+                                index = typeParameters.length;
+                                typeParameters.push(t);
+                            }
+                            result += "=" + index;
+                            continue;
+                        }
+                        // We mark type references that reference constrained type parameters such that we know to obtain
+                        // and look for a "broadest equivalent key" in the cache.
+                        constraintMarker = "*";
                     }
-                    result += "=" + index;
-                }
-                else if (depth < 4 && isTypeReferenceWithGenericArguments(t)) {
-                    result += "<" + getTypeReferenceId(t, typeParameters, depth + 1) + ">";
-                }
-                else {
+                    else if (depth < 4 && isTypeReferenceWithGenericArguments(t)) {
+                        result += "<" + getTypeReferenceId(t, depth + 1) + ">";
+                        continue;
+                    }
                     result += "-" + t.id;
                 }
+                return result;
             }
-            return result;
         }
         /**
          * To improve caching, the relation key for two generic types uses the target's id plus ids of the type parameters.
          * For other cases, the types ids are used.
          */
-        function getRelationKey(source, target, intersectionState, relation) {
+        function getRelationKey(source, target, intersectionState, relation, ignoreConstraints) {
             if (relation === identityRelation && source.id > target.id) {
                 var temp = source;
                 source = target;
                 target = temp;
             }
             var postFix = intersectionState ? ":" + intersectionState : "";
-            if (isTypeReferenceWithGenericArguments(source) && isTypeReferenceWithGenericArguments(target)) {
-                var typeParameters = [];
-                return getTypeReferenceId(source, typeParameters) + "," + getTypeReferenceId(target, typeParameters) + postFix;
-            }
-            return source.id + "," + target.id + postFix;
+            return isTypeReferenceWithGenericArguments(source) && isTypeReferenceWithGenericArguments(target) ?
+                getGenericTypeReferenceRelationKey(source, target, postFix, ignoreConstraints) :
+                "".concat(source.id, ",").concat(target.id).concat(postFix);
         }
         // Invoke the callback for each underlying property symbol of the given symbol and return the first
         // value that isn't undefined.
@@ -65420,28 +65444,35 @@ var ts;
                 !hasBaseType(checkClass, getDeclaringClass(p)) : false; }) ? undefined : checkClass;
         }
         // Return true if the given type is deeply nested. We consider this to be the case when structural type comparisons
-        // for 5 or more occurrences or instantiations of the type have been recorded on the given stack. It is possible,
+        // for maxDepth or more occurrences or instantiations of the type have been recorded on the given stack. It is possible,
         // though highly unlikely, for this test to be true in a situation where a chain of instantiations is not infinitely
-        // expanding. Effectively, we will generate a false positive when two types are structurally equal to at least 5
+        // expanding. Effectively, we will generate a false positive when two types are structurally equal to at least maxDepth
         // levels, but unequal at some level beyond that.
-        // In addition, this will also detect when an indexed access has been chained off of 5 or more times (which is essentially
-        // the dual of the structural comparison), and likewise mark the type as deeply nested, potentially adding false positives
-        // for finite but deeply expanding indexed accesses (eg, for `Q[P1][P2][P3][P4][P5]`).
-        // It also detects when a recursive type reference has expanded 5 or more times, eg, if the true branch of
+        // In addition, this will also detect when an indexed access has been chained off of maxDepth more times (which is
+        // essentially the dual of the structural comparison), and likewise mark the type as deeply nested, potentially adding
+        // false positives for finite but deeply expanding indexed accesses (eg, for `Q[P1][P2][P3][P4][P5]`).
+        // It also detects when a recursive type reference has expanded maxDepth or more times, e.g. if the true branch of
         // `type A<T> = null extends T ? [A<NonNullable<T>>] : [T]`
-        // has expanded into `[A<NonNullable<NonNullable<NonNullable<NonNullable<NonNullable<T>>>>>>]`
-        // in such cases we need to terminate the expansion, and we do so here.
+        // has expanded into `[A<NonNullable<NonNullable<NonNullable<NonNullable<NonNullable<T>>>>>>]`. In such cases we need
+        // to terminate the expansion, and we do so here.
         function isDeeplyNestedType(type, stack, depth, maxDepth) {
-            if (maxDepth === void 0) { maxDepth = 5; }
+            if (maxDepth === void 0) { maxDepth = 3; }
             if (depth >= maxDepth) {
                 var identity_1 = getRecursionIdentity(type);
                 var count = 0;
+                var lastTypeId = 0;
                 for (var i = 0; i < depth; i++) {
-                    if (getRecursionIdentity(stack[i]) === identity_1) {
-                        count++;
-                        if (count >= maxDepth) {
-                            return true;
+                    var t = stack[i];
+                    if (getRecursionIdentity(t) === identity_1) {
+                        // We only count occurrences with a higher type id than the previous occurrence, since higher
+                        // type ids are an indicator of newer instantiations caused by recursion.
+                        if (t.id >= lastTypeId) {
+                            count++;
+                            if (count >= maxDepth) {
+                                return true;
+                            }
                         }
+                        lastTypeId = t.id;
                     }
                 }
             }
@@ -73031,7 +73062,7 @@ var ts;
         }
         function getSuggestedSymbolForNonexistentSymbol(location, outerName, meaning) {
             ts.Debug.assert(outerName !== undefined, "outername should always be defined");
-            var result = resolveNameHelper(location, outerName, meaning, /*nameNotFoundMessage*/ undefined, outerName, /*isUse*/ false, /*excludeGlobals*/ false, function (symbols, name, meaning) {
+            var result = resolveNameHelper(location, outerName, meaning, /*nameNotFoundMessage*/ undefined, outerName, /*isUse*/ false, /*excludeGlobals*/ false, /*getSpellingSuggestions*/ true, function (symbols, name, meaning) {
                 ts.Debug.assertEqual(outerName, name, "name should equal outerName");
                 var symbol = getSymbol(symbols, name, meaning);
                 // Sometimes the symbol is found when location is a return type of a function: `typeof x` and `x` is declared in the body of the function
@@ -80421,7 +80452,7 @@ var ts;
             }
             // For a commonjs `const x = require`, validate the alias and exit
             var symbol = getSymbolOfNode(node);
-            if (symbol.flags & 2097152 /* Alias */ && ts.isRequireVariableDeclaration(node)) {
+            if (symbol.flags & 2097152 /* Alias */ && ts.isVariableDeclarationInitializedToBareOrAccessedRequire(node)) {
                 checkAliasSymbol(node);
                 return;
             }
@@ -124518,7 +124549,7 @@ var ts;
                         isWhiteSpaceOnlyJsxText(child);
                     if (lookInPreviousChild) {
                         // actual start of the node is past the position - previous token should be at the end of previous child
-                        var candidate_1 = findRightmostChildNodeWithTokens(children, /*exclusiveStartPosition*/ i, sourceFile);
+                        var candidate_1 = findRightmostChildNodeWithTokens(children, /*exclusiveStartPosition*/ i, sourceFile, n.kind);
                         return candidate_1 && findRightmostToken(candidate_1, sourceFile);
                     }
                     else {
@@ -124532,7 +124563,7 @@ var ts;
             // the only known case is when position is at the end of the file.
             // Try to find the rightmost token in the file without filtering.
             // Namely we are skipping the check: 'position < node.end'
-            var candidate = findRightmostChildNodeWithTokens(children, /*exclusiveStartPosition*/ children.length, sourceFile);
+            var candidate = findRightmostChildNodeWithTokens(children, /*exclusiveStartPosition*/ children.length, sourceFile, n.kind);
             return candidate && findRightmostToken(candidate, sourceFile);
         }
     }
@@ -124548,17 +124579,19 @@ var ts;
         if (children.length === 0) {
             return n;
         }
-        var candidate = findRightmostChildNodeWithTokens(children, /*exclusiveStartPosition*/ children.length, sourceFile);
+        var candidate = findRightmostChildNodeWithTokens(children, /*exclusiveStartPosition*/ children.length, sourceFile, n.kind);
         return candidate && findRightmostToken(candidate, sourceFile);
     }
     /**
      * Finds the rightmost child to the left of `children[exclusiveStartPosition]` which is a non-all-whitespace token or has constituent tokens.
      */
-    function findRightmostChildNodeWithTokens(children, exclusiveStartPosition, sourceFile) {
+    function findRightmostChildNodeWithTokens(children, exclusiveStartPosition, sourceFile, parentKind) {
         for (var i = exclusiveStartPosition - 1; i >= 0; i--) {
             var child = children[i];
             if (isWhiteSpaceOnlyJsxText(child)) {
-                ts.Debug.assert(i > 0, "`JsxText` tokens should not be the first child of `JsxElement | JsxSelfClosingElement`");
+                if (i === 0 && (parentKind === 11 /* JsxText */ || parentKind === 278 /* JsxSelfClosingElement */)) {
+                    ts.Debug.fail("`JsxText` tokens should not be the first child of `JsxElement | JsxSelfClosingElement`");
+                }
             }
             else if (nodeHasTokens(children[i], sourceFile)) {
                 return children[i];
@@ -128975,7 +129008,7 @@ var ts;
             return (location === null || location === void 0 ? void 0 : location.kind) === 79 /* Identifier */ ? ts.createTextSpanFromNode(location) : undefined;
         }
         function completionInfoFromData(sourceFile, host, program, compilerOptions, log, completionData, preferences) {
-            var symbols = completionData.symbols, contextToken = completionData.contextToken, completionKind = completionData.completionKind, isInSnippetScope = completionData.isInSnippetScope, isNewIdentifierLocation = completionData.isNewIdentifierLocation, location = completionData.location, propertyAccessToConvert = completionData.propertyAccessToConvert, keywordFilters = completionData.keywordFilters, literals = completionData.literals, symbolToOriginInfoMap = completionData.symbolToOriginInfoMap, recommendedCompletion = completionData.recommendedCompletion, isJsxInitializer = completionData.isJsxInitializer, isTypeOnlyLocation = completionData.isTypeOnlyLocation, isJsxIdentifierExpected = completionData.isJsxIdentifierExpected, importCompletionNode = completionData.importCompletionNode, insideJsDocTagTypeExpression = completionData.insideJsDocTagTypeExpression, symbolToSortTextIdMap = completionData.symbolToSortTextIdMap, hasUnresolvedAutoImports = completionData.hasUnresolvedAutoImports;
+            var symbols = completionData.symbols, contextToken = completionData.contextToken, completionKind = completionData.completionKind, isInSnippetScope = completionData.isInSnippetScope, isNewIdentifierLocation = completionData.isNewIdentifierLocation, location = completionData.location, propertyAccessToConvert = completionData.propertyAccessToConvert, keywordFilters = completionData.keywordFilters, literals = completionData.literals, symbolToOriginInfoMap = completionData.symbolToOriginInfoMap, recommendedCompletion = completionData.recommendedCompletion, isJsxInitializer = completionData.isJsxInitializer, isTypeOnlyLocation = completionData.isTypeOnlyLocation, isJsxIdentifierExpected = completionData.isJsxIdentifierExpected, isRightOfOpenTag = completionData.isRightOfOpenTag, importCompletionNode = completionData.importCompletionNode, insideJsDocTagTypeExpression = completionData.insideJsDocTagTypeExpression, symbolToSortTextIdMap = completionData.symbolToSortTextIdMap, hasUnresolvedAutoImports = completionData.hasUnresolvedAutoImports;
             // Verify if the file is JSX language variant
             if (ts.getLanguageVariant(sourceFile.scriptKind) === 1 /* JSX */) {
                 var completionInfo = getJsxClosingTagCompletion(location, sourceFile);
@@ -128986,7 +129019,7 @@ var ts;
             var entries = [];
             if (isUncheckedFile(sourceFile, compilerOptions)) {
                 var uniqueNames = getCompletionEntriesFromSymbols(symbols, entries, 
-                /*replacementToken*/ undefined, contextToken, location, sourceFile, host, program, ts.getEmitScriptTarget(compilerOptions), log, completionKind, preferences, compilerOptions, isTypeOnlyLocation, propertyAccessToConvert, isJsxIdentifierExpected, isJsxInitializer, importCompletionNode, recommendedCompletion, symbolToOriginInfoMap, symbolToSortTextIdMap);
+                /*replacementToken*/ undefined, contextToken, location, sourceFile, host, program, ts.getEmitScriptTarget(compilerOptions), log, completionKind, preferences, compilerOptions, isTypeOnlyLocation, propertyAccessToConvert, isJsxIdentifierExpected, isJsxInitializer, importCompletionNode, recommendedCompletion, symbolToOriginInfoMap, symbolToSortTextIdMap, isJsxIdentifierExpected, isRightOfOpenTag);
                 getJSCompletionEntries(sourceFile, location.pos, uniqueNames, ts.getEmitScriptTarget(compilerOptions), entries); // TODO: GH#18217
             }
             else {
@@ -128994,7 +129027,7 @@ var ts;
                     return undefined;
                 }
                 getCompletionEntriesFromSymbols(symbols, entries, 
-                /*replacementToken*/ undefined, contextToken, location, sourceFile, host, program, ts.getEmitScriptTarget(compilerOptions), log, completionKind, preferences, compilerOptions, isTypeOnlyLocation, propertyAccessToConvert, isJsxIdentifierExpected, isJsxInitializer, importCompletionNode, recommendedCompletion, symbolToOriginInfoMap, symbolToSortTextIdMap);
+                /*replacementToken*/ undefined, contextToken, location, sourceFile, host, program, ts.getEmitScriptTarget(compilerOptions), log, completionKind, preferences, compilerOptions, isTypeOnlyLocation, propertyAccessToConvert, isJsxIdentifierExpected, isJsxInitializer, importCompletionNode, recommendedCompletion, symbolToOriginInfoMap, symbolToSortTextIdMap, isJsxIdentifierExpected, isRightOfOpenTag);
             }
             if (keywordFilters !== 0 /* None */) {
                 var entryNames = new ts.Set(entries.map(function (e) { return e.name; }));
@@ -129100,7 +129133,7 @@ var ts;
         function createCompletionEntryForLiteral(sourceFile, preferences, literal) {
             return { name: completionNameForLiteral(sourceFile, preferences, literal), kind: "string" /* string */, kindModifiers: "" /* none */, sortText: SortText.LocationPriority };
         }
-        function createCompletionEntry(symbol, sortText, replacementToken, contextToken, location, sourceFile, host, program, name, needsConvertPropertyAccess, origin, recommendedCompletion, propertyAccessToConvert, isJsxInitializer, importCompletionNode, useSemicolons, options, preferences, completionKind) {
+        function createCompletionEntry(symbol, sortText, replacementToken, contextToken, location, sourceFile, host, program, name, needsConvertPropertyAccess, origin, recommendedCompletion, propertyAccessToConvert, isJsxInitializer, importCompletionNode, useSemicolons, options, preferences, completionKind, isJsxIdentifierExpected, isRightOfOpenTag) {
             var _a, _b;
             var insertText;
             var replacementSpan = ts.getReplacementSpanForContextToken(replacementToken);
@@ -129171,8 +129204,7 @@ var ts;
                     source = CompletionSource.ClassMemberSnippet;
                 }
             }
-            var kind = ts.SymbolDisplay.getSymbolKind(typeChecker, symbol, location);
-            if (kind === "JSX attribute" /* jsxAttribute */ && preferences.includeCompletionsWithSnippetText && preferences.jsxAttributeCompletionStyle && preferences.jsxAttributeCompletionStyle !== "none") {
+            if (isJsxIdentifierExpected && !isRightOfOpenTag && preferences.includeCompletionsWithSnippetText && preferences.jsxAttributeCompletionStyle && preferences.jsxAttributeCompletionStyle !== "none") {
                 var useBraces_1 = preferences.jsxAttributeCompletionStyle === "braces";
                 var type = typeChecker.getTypeOfSymbolAtLocation(symbol, location);
                 // If is boolean like or undefined, don't return a snippet we want just to return the completion.
@@ -129210,7 +129242,7 @@ var ts;
             // entries (like JavaScript identifier entries).
             return {
                 name: name,
-                kind: kind,
+                kind: ts.SymbolDisplay.getSymbolKind(typeChecker, symbol, location),
                 kindModifiers: ts.SymbolDisplay.getSymbolModifiers(typeChecker, symbol),
                 sortText: sortText,
                 source: source,
@@ -129485,7 +129517,7 @@ var ts;
                 return CompletionSource.ThisProperty;
             }
         }
-        function getCompletionEntriesFromSymbols(symbols, entries, replacementToken, contextToken, location, sourceFile, host, program, target, log, kind, preferences, compilerOptions, isTypeOnlyLocation, propertyAccessToConvert, jsxIdentifierExpected, isJsxInitializer, importCompletionNode, recommendedCompletion, symbolToOriginInfoMap, symbolToSortTextIdMap) {
+        function getCompletionEntriesFromSymbols(symbols, entries, replacementToken, contextToken, location, sourceFile, host, program, target, log, kind, preferences, compilerOptions, isTypeOnlyLocation, propertyAccessToConvert, jsxIdentifierExpected, isJsxInitializer, importCompletionNode, recommendedCompletion, symbolToOriginInfoMap, symbolToSortTextIdMap, isJsxIdentifierExpected, isRightOfOpenTag) {
             var _a;
             var start = ts.timestamp();
             var variableDeclaration = getVariableDeclaration(location);
@@ -129506,7 +129538,7 @@ var ts;
                 var name = info.name, needsConvertPropertyAccess = info.needsConvertPropertyAccess;
                 var sortTextId = (_a = symbolToSortTextIdMap === null || symbolToSortTextIdMap === void 0 ? void 0 : symbolToSortTextIdMap[ts.getSymbolId(symbol)]) !== null && _a !== void 0 ? _a : 11 /* LocationPriority */;
                 var sortText = (isDeprecated(symbol, typeChecker) ? 8 /* DeprecatedOffset */ + sortTextId : sortTextId).toString();
-                var entry = createCompletionEntry(symbol, sortText, replacementToken, contextToken, location, sourceFile, host, program, name, needsConvertPropertyAccess, origin, recommendedCompletion, propertyAccessToConvert, isJsxInitializer, importCompletionNode, useSemicolons, compilerOptions, preferences, kind);
+                var entry = createCompletionEntry(symbol, sortText, replacementToken, contextToken, location, sourceFile, host, program, name, needsConvertPropertyAccess, origin, recommendedCompletion, propertyAccessToConvert, isJsxInitializer, importCompletionNode, useSemicolons, compilerOptions, preferences, kind, isJsxIdentifierExpected, isRightOfOpenTag);
                 if (!entry) {
                     continue;
                 }
@@ -130100,6 +130132,7 @@ var ts;
                 symbolToSortTextIdMap: symbolToSortTextIdMap,
                 isTypeOnlyLocation: isTypeOnlyLocation,
                 isJsxIdentifierExpected: isJsxIdentifierExpected,
+                isRightOfOpenTag: isRightOfOpenTag,
                 importCompletionNode: importCompletionNode,
                 hasUnresolvedAutoImports: hasUnresolvedAutoImports,
             };
@@ -133031,7 +133064,7 @@ var ts;
                     ts.Debug.assert(parent.name === node);
                     return true;
                 case 202 /* BindingElement */:
-                    return ts.isInJSFile(node) && ts.isRequireVariableDeclaration(parent);
+                    return ts.isInJSFile(node) && ts.isVariableDeclarationInitializedToBareOrAccessedRequire(parent);
                 default:
                     return false;
             }
@@ -134431,7 +134464,7 @@ var ts;
                 // Use the parent symbol if the location is commonjs require syntax on javascript files only.
                 if (ts.isInJSFile(referenceLocation)
                     && referenceLocation.parent.kind === 202 /* BindingElement */
-                    && ts.isRequireVariableDeclaration(referenceLocation.parent)) {
+                    && ts.isVariableDeclarationInitializedToBareOrAccessedRequire(referenceLocation.parent)) {
                     referenceSymbol = referenceLocation.parent.symbol;
                     // The parent will not have a symbol if it's an ObjectBindingPattern (when destructuring is used).  In
                     // this case, just skip it, since the bound identifiers are not an alias of the import.
@@ -136138,7 +136171,7 @@ var ts;
                     return declaration.parent.kind === 268 /* NamedImports */;
                 case 202 /* BindingElement */:
                 case 253 /* VariableDeclaration */:
-                    return ts.isInJSFile(declaration) && ts.isRequireVariableDeclaration(declaration);
+                    return ts.isInJSFile(declaration) && ts.isVariableDeclarationInitializedToBareOrAccessedRequire(declaration);
                 default:
                     return false;
             }
@@ -137421,6 +137454,9 @@ var ts;
         // We use 1 NavNode to represent 'A.B.C', but there are multiple source nodes.
         // Only merge module nodes that have the same chain. Don't merge 'A.B.C' with 'A'!
         function areSameModule(a, b) {
+            if (!a.body || !b.body) {
+                return a.body === b.body;
+            }
             return a.body.kind === b.body.kind && (a.body.kind !== 260 /* ModuleDeclaration */ || areSameModule(a.body, b.body));
         }
         /** Merge source into target. Source should be thrown away after this is called. */
@@ -149170,7 +149206,7 @@ var ts;
             var importKind = getImportKind(importingFile, exportKind, compilerOptions);
             return ts.mapDefined(importingFile.imports, function (moduleSpecifier) {
                 var i = ts.importFromModuleSpecifier(moduleSpecifier);
-                if (ts.isRequireVariableDeclaration(i.parent)) {
+                if (ts.isVariableDeclarationInitializedToRequire(i.parent)) {
                     return checker.resolveExternalModuleName(moduleSpecifier) === moduleSymbol ? { declaration: i.parent, importKind: importKind, symbol: symbol, targetFlags: targetFlags } : undefined;
                 }
                 if (i.kind === 265 /* ImportDeclaration */ || i.kind === 264 /* ImportEqualsDeclaration */) {
@@ -157230,11 +157266,12 @@ var ts;
             var result = [];
             return visitor(selection) ? undefined : result;
             function visitor(node) {
+                var _a;
                 if (ts.isTypeReferenceNode(node)) {
                     if (ts.isIdentifier(node.typeName)) {
                         var symbol = checker.resolveName(node.typeName.text, node.typeName, 262144 /* TypeParameter */, /* excludeGlobals */ true);
-                        if (symbol === null || symbol === void 0 ? void 0 : symbol.declarations) {
-                            var declaration = ts.cast(ts.first(symbol.declarations), ts.isTypeParameterDeclaration);
+                        var declaration = ts.tryCast((_a = symbol === null || symbol === void 0 ? void 0 : symbol.declarations) === null || _a === void 0 ? void 0 : _a[0], ts.isTypeParameterDeclaration);
+                        if (declaration) {
                             if (rangeContainsSkipTrivia(statement, declaration, file) && !rangeContainsSkipTrivia(selection, declaration, file)) {
                                 ts.pushIfUnique(result, declaration);
                             }
