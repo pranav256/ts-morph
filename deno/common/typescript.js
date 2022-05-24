@@ -294,7 +294,7 @@ var ts;
     // The following is baselined as a literal template type without intervention
     /** The version of the TypeScript compiler release */
     // eslint-disable-next-line @typescript-eslint/no-inferrable-types
-    ts.version = "".concat(ts.versionMajorMinor, ".1-rc");
+    ts.version = "4.7.2";
     /* @internal */
     var Comparison;
     (function (Comparison) {
@@ -59090,9 +59090,9 @@ var ts;
                 t.flags & 2097152 /* TypeFlags.Intersection */ ? getApparentTypeOfIntersectionType(t) :
                     t.flags & 402653316 /* TypeFlags.StringLike */ ? globalStringType :
                         t.flags & 296 /* TypeFlags.NumberLike */ ? globalNumberType :
-                            t.flags & 2112 /* TypeFlags.BigIntLike */ ? getGlobalBigIntType(/*reportErrors*/ languageVersion >= 7 /* ScriptTarget.ES2020 */) :
+                            t.flags & 2112 /* TypeFlags.BigIntLike */ ? getGlobalBigIntType() :
                                 t.flags & 528 /* TypeFlags.BooleanLike */ ? globalBooleanType :
-                                    t.flags & 12288 /* TypeFlags.ESSymbolLike */ ? getGlobalESSymbolType(/*reportErrors*/ languageVersion >= 2 /* ScriptTarget.ES2015 */) :
+                                    t.flags & 12288 /* TypeFlags.ESSymbolLike */ ? getGlobalESSymbolType() :
                                         t.flags & 67108864 /* TypeFlags.NonPrimitive */ ? emptyObjectType :
                                             t.flags & 4194304 /* TypeFlags.Index */ ? keyofConstraintType :
                                                 t.flags & 2 /* TypeFlags.Unknown */ && !strictNullChecks ? emptyObjectType :
@@ -60667,8 +60667,8 @@ var ts;
         function getGlobalESSymbolConstructorTypeSymbol(reportErrors) {
             return deferredGlobalESSymbolConstructorTypeSymbol || (deferredGlobalESSymbolConstructorTypeSymbol = getGlobalTypeSymbol("SymbolConstructor", reportErrors));
         }
-        function getGlobalESSymbolType(reportErrors) {
-            return (deferredGlobalESSymbolType || (deferredGlobalESSymbolType = getGlobalType("Symbol", /*arity*/ 0, reportErrors))) || emptyObjectType;
+        function getGlobalESSymbolType() {
+            return (deferredGlobalESSymbolType || (deferredGlobalESSymbolType = getGlobalType("Symbol", /*arity*/ 0, /*reportErrors*/ false))) || emptyObjectType;
         }
         function getGlobalPromiseType(reportErrors) {
             return (deferredGlobalPromiseType || (deferredGlobalPromiseType = getGlobalType("Promise", /*arity*/ 1, reportErrors))) || emptyGenericType;
@@ -60732,8 +60732,8 @@ var ts;
             deferredGlobalAwaitedSymbol || (deferredGlobalAwaitedSymbol = getGlobalTypeAliasSymbol("Awaited", /*arity*/ 1, reportErrors) || (reportErrors ? unknownSymbol : undefined));
             return deferredGlobalAwaitedSymbol === unknownSymbol ? undefined : deferredGlobalAwaitedSymbol;
         }
-        function getGlobalBigIntType(reportErrors) {
-            return (deferredGlobalBigIntType || (deferredGlobalBigIntType = getGlobalType("BigInt", /*arity*/ 0, reportErrors))) || emptyObjectType;
+        function getGlobalBigIntType() {
+            return (deferredGlobalBigIntType || (deferredGlobalBigIntType = getGlobalType("BigInt", /*arity*/ 0, /*reportErrors*/ false))) || emptyObjectType;
         }
         /**
          * Instantiates a global type that is generic with some element type, and returns that instantiation.
@@ -64885,7 +64885,7 @@ var ts;
                 if ((globalStringType === source && stringType === target) ||
                     (globalNumberType === source && numberType === target) ||
                     (globalBooleanType === source && booleanType === target) ||
-                    (getGlobalESSymbolType(/*reportErrors*/ false) === source && esSymbolType === target)) {
+                    (getGlobalESSymbolType() === source && esSymbolType === target)) {
                     reportError(ts.Diagnostics._0_is_a_primitive_but_1_is_a_wrapper_object_Prefer_using_0_when_possible, targetType, sourceType);
                 }
             }
@@ -82697,7 +82697,7 @@ var ts;
                     var childSymbol = getSymbolAtLocation(childNode);
                     if (childSymbol && childSymbol === testedSymbol) {
                         // If the test was a simple identifier, the above check is sufficient
-                        if (ts.isIdentifier(expr)) {
+                        if (ts.isIdentifier(expr) || ts.isIdentifier(testedNode) && ts.isBinaryExpression(testedNode.parent)) {
                             return true;
                         }
                         // Otherwise we need to ensure the symbol is called on the same target
